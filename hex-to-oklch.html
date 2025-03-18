@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hex to OKLCH Color Converter</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+      line-height: 1.6;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      color: #333;
+    }
+    h1 {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    .container {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .input-area, .output-area {
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 20px;
+      background-color: #f9f9f9;
+    }
+    label {
+      display: block;
+      margin-bottom: 10px;
+      font-weight: bold;
+    }
+    textarea {
+      width: 100%;
+      min-height: 150px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      padding: 10px;
+      font-family: monospace;
+      font-size: 14px;
+    }
+    button {
+      background-color: #4361ee;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 16px;
+      margin-top: 10px;
+    }
+    button:hover {
+      background-color: #3a56d4;
+    }
+    .color-preview {
+      margin-top: 20px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 20px;
+      background-color: white;
+    }
+    .color-swatch {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .swatch {
+      width: 100px;
+      height: 100px;
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      color: white;
+      text-shadow: 0 0 2px rgba(0,0,0,0.7);
+      position: relative;
+      overflow: hidden;
+    }
+    .swatch-name, .swatch-value {
+      background-color: rgba(0,0,0,0.5);
+      padding: 3px 6px;
+      border-radius: 3px;
+      font-size: 12px;
+      margin: 2px;
+    }
+    .error {
+      color: #d32f2f;
+      font-size: 14px;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Hex to OKLCH Color Converter</h1>
+  
+  <div class="container">
+    <div class="input-area">
+      <label for="input-json">Input JSON (color names and hex values):</label>
+      <textarea id="input-json" placeholder='{"primary": "#4361ee", "secondary": "#3a0ca3", "accent": "#f72585"}'></textarea>
+      <button id="convert-btn">Convert to OKLCH</button>
+      <div id="input-error" class="error"></div>
+    </div>
+    
+    <div class="output-area">
+      <label for="output-css">CSS Output with OKLCH Colors:</label>
+      <textarea id="output-css" readonly></textarea>
+      <button id="copy-btn">Copy to Clipboard</button>
+    </div>
+    
+    <div class="color-preview">
+      <label>Color Preview:</label>
+      <div id="color-swatch" class="color-swatch"></div>
+    </div>
+  </div>
+
+  <script>
+    // Utility function to convert hex to rgb
+    function hexToRgb(hex) {
+      // Remove # if present
+      hex = hex.replace(/^#/, '');
+      
+      // Parse as RGB
+      let bigint = parseInt(hex, 16);
+      let r = (bigint >> 16) & 255;
+      let g = (bigint >> 8) & 255;
+      let b = bigint & 255;
+      
+      return [r, g, b];
+    }
+    
+    // Convert RGB to linear RGB
+    function linearize(value) {
+      const v = value / 255;
+      return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    }
+    
+    // Convert linear RGB to XYZ using sRGB matrix
+    function linearRgbToXyz(rgb) {
+      const r = linearize(rgb[0]);
+      const g = linearize(rgb[1]);
+      const b = linearize(rgb[2]);
+      
+      // sRGB to XYZ matrix
+      const x = 0.4124 * r + 0.3576 * g + 0.1805 * b;
+      const y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      const z = 0.0193 * r + 0.1192 * g + 0.9505 * b;
+      
+      return [x, y, z];
+    }
+    
+    // Convert XYZ to OKLCH
+    function xyzToOklch(xyz) {
+      // First convert XYZ to OKLab
+      // XYZ to LMS matrix
+      const l = 0.8189 * xyz[0] + 0.3618 * xyz[1] - 0.1288 * xyz[2];
+      const m = 0.0329 * xyz[0] + 0.9293 * xyz[1] + 0.0361 * xyz[2];
+      const s = 0.0482 * xyz[0] + 0.2621 * xyz[1] + 0.6839 * xyz[2];
+      
+      // Nonlinear transformation
+      const l_ = Math.cbrt(l);
+      const m_ = Math.cbrt(m);
+      const s_ = Math.cbrt(s);
+      
+      // LMS to OKLab matrix
+      const L = 0.2104 * l_ + 0.7936 * m_ - 0.0040 * s_;
+      const a = 1.9779 * l_ - 2.4285 * m_ + 0.4506 * s_;
+      const b = 0.0259 * l_ + 0.7827 * m_ - 0.8086 * s_;
+      
+      // OKLab to OKLCH
+      const C = Math.sqrt(a * a + b * b);
+      let h = Math.atan2(b, a) * 180 / Math.PI;
+      if (h < 0) {
+        h += 360;
+      }
+      
+      return [L, C, h];
+    }
+    
+    // Main function to convert hex to OKLCH
+    function hexToOklch(hex) {
+      const rgb = hexToRgb(hex);
+      const xyz = linearRgbToXyz(rgb);
+      const [L, C, h] = xyzToOklch(xyz);
+      
+      // Format as CSS oklch function
+      return `oklch(${L.toFixed(3)} ${C.toFixed(3)} ${h.toFixed(1)}deg)`;
+    }
+    
+    // UI interactions
+    document.addEventListener('DOMContentLoaded', () => {
+      const inputJson = document.getElementById('input-json');
+      const outputCss = document.getElementById('output-css');
+      const convertBtn = document.getElementById('convert-btn');
+      const copyBtn = document.getElementById('copy-btn');
+      const colorSwatch = document.getElementById('color-swatch');
+      const inputError = document.getElementById('input-error');
+      
+      // Add example data
+      inputJson.value = '{\n  "primary": "#4361ee",\n  "secondary": "#3a0ca3",\n  "accent": "#f72585",\n  "success": "#06d6a0",\n  "warning": "#ffd166"\n}';
+      
+      // Convert button click
+      convertBtn.addEventListener('click', () => {
+        try {
+          inputError.textContent = '';
+          const jsonData = JSON.parse(inputJson.value);
+          let cssOutput = '';
+          colorSwatch.innerHTML = '';
+          
+          for (const [name, hexValue] of Object.entries(jsonData)) {
+            if (typeof hexValue !== 'string' || !/^#?([a-fA-F0-9]{3}|[a-fA-F0-9]{6})$/.test(hexValue)) {
+              throw new Error(`Invalid hex color format for '${name}': ${hexValue}`);
+            }
+            
+            // Ensure hex has # prefix
+            const hexColor = hexValue.startsWith('#') ? hexValue : `#${hexValue}`;
+            const oklchColor = hexToOklch(hexColor);
+            
+            // Add to CSS output
+            cssOutput += `--${name}: ${oklchColor};\n`;
+            
+            // Create color swatch
+            const swatch = document.createElement('div');
+            swatch.className = 'swatch';
+            swatch.style.backgroundColor = hexColor;
+            
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'swatch-name';
+            nameSpan.textContent = name;
+            
+            const valueSpan = document.createElement('span');
+            valueSpan.className = 'swatch-value';
+            valueSpan.textContent = oklchColor;
+            
+            swatch.appendChild(nameSpan);
+            swatch.appendChild(valueSpan);
+            colorSwatch.appendChild(swatch);
+          }
+          
+          outputCss.value = `:root {\n${cssOutput}}`;
+        } catch (error) {
+          inputError.textContent = `Error: ${error.message}`;
+          outputCss.value = '';
+        }
+      });
+      
+      // Copy button click
+      copyBtn.addEventListener('click', () => {
+        outputCss.select();
+        document.execCommand('copy');
+        
+        // Change button text temporarily
+        const originalText = copyBtn.textContent;
+        copyBtn.textContent = 'Copied!';
+        setTimeout(() => {
+          copyBtn.textContent = originalText;
+        }, 1500);
+      });
+      
+      // Initial conversion
+      convertBtn.click();
+    });
+  </script>
+</body>
+</html>
